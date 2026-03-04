@@ -103,7 +103,6 @@ def download_csv_button():
 
 # ---------- Email helpers ----------
 def get_secret(name: str) -> Optional[str]:
-    # Streamlit Cloud secrets first, then environment variables
     try:
         if name in st.secrets:
             return str(st.secrets[name])
@@ -179,57 +178,75 @@ def main():
     st.title(APP_TITLE)
 
     items = load_items()
-params = st.query_params
-is_admin = str(params.get("admin", "0")).strip() == "1"
-    # ---- Sidebar admin (no password) ----
-if is_admin:
-    with st.sidebar:
-        st.header("Admin (No Password)")
-        st.caption("Adds items to the bottom of the list.")
 
-        with st.form("admin_add_item", clear_on_submit=True):
-            new_label = st.text_input("Item name", placeholder="Example: EXTRA BATTERY PACK")
-            value_field = st.selectbox(
-                "Optional right-side field",
-                options=["none", "text", "number", "choice"],
-                help="none = checkbox only. text/number = small box. choice = dropdown.",
-            )
+    # ---- Admin flag via URL ----
+    params = st.query_params
+    is_admin = str(params.get("admin", "0")).strip() == "1"
 
-            choice_text = ""
-            if value_field == "choice":
-                choice_text = st.text_input(
-                    "Choices (comma-separated)",
-                    value="S, M, L, XL",
-                    help="Example: S, M, L, XL, XXL",
+    # ---- Hide sidebar completely for non-admin users ----
+    if not is_admin:
+        st.markdown(
+            """
+            <style>
+              section[data-testid="stSidebar"] {display:none !important;}
+              div[data-testid="collapsedControl"] {display:none !important;}
+              header button {display:none !important;}
+              .block-container {padding-left: 1rem !important;}
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # ---- Sidebar admin (ONLY for admin link) ----
+    if is_admin:
+        with st.sidebar:
+            st.header("Admin (No Password)")
+            st.caption("Adds items to the bottom of the list.")
+
+            with st.form("admin_add_item", clear_on_submit=True):
+                new_label = st.text_input("Item name", placeholder="Example: EXTRA BATTERY PACK")
+                value_field = st.selectbox(
+                    "Optional right-side field",
+                    options=["none", "text", "number", "choice"],
+                    help="none = checkbox only. text/number = small box. choice = dropdown.",
                 )
 
-            submitted = st.form_submit_button("Add item to bottom", use_container_width=True)
+                choice_text = ""
+                if value_field == "choice":
+                    choice_text = st.text_input(
+                        "Choices (comma-separated)",
+                        value="S, M, L, XL",
+                        help="Example: S, M, L, XL, XXL",
+                    )
 
-            if submitted:
-                if not new_label.strip():
-                    st.error("Item name is required.")
-                else:
-                    new_item = Item(label=new_label.strip(), value_field=value_field)
-                    if value_field == "choice":
-                        choices = [c.strip() for c in choice_text.split(",") if c.strip()]
-                        new_item.choices = choices if choices else ["Option 1", "Option 2"]
+                add_item = st.form_submit_button("Add item to bottom", use_container_width=True)
 
-                    items.append(new_item)
-                    save_items(items)
-                    st.success("Added.")
-                    st.rerun()
+                if add_item:
+                    if not new_label.strip():
+                        st.error("Item name is required.")
+                    else:
+                        new_item = Item(label=new_label.strip(), value_field=value_field)
+                        if value_field == "choice":
+                            choices = [c.strip() for c in choice_text.split(",") if c.strip()]
+                            new_item.choices = choices if choices else ["Option 1", "Option 2"]
 
-        st.divider()
-        st.subheader("Submissions")
-        download_csv_button()
+                        items.append(new_item)
+                        save_items(items)
+                        st.success("Added.")
+                        st.rerun()
 
-        st.divider()
-        st.subheader("Email Settings")
-        st.caption("Uses SendGrid. Configure via Streamlit Secrets.")
-        st.text(f"TO_EMAIL: {get_secret('TO_EMAIL') or 'nicholas.nabholz@bexar.org'}")
-        st.text(f"FROM_EMAIL: {get_secret('FROM_EMAIL') or '(not set)'}")
-        st.text(f"SENDGRID_API_KEY: {'set' if get_secret('SENDGRID_API_KEY') else '(not set)'}")
-    # ---- Form fields (top) ----
+            st.divider()
+            st.subheader("Submissions")
+            download_csv_button()
+
+            st.divider()
+            st.subheader("Email Settings")
+            st.caption("Uses SendGrid. Configure via Streamlit Secrets.")
+            st.text(f"TO_EMAIL: {get_secret('TO_EMAIL') or 'nicholas.nabholz@bexar.org'}")
+            st.text(f"FROM_EMAIL: {get_secret('FROM_EMAIL') or '(not set)'}")
+            st.text(f"SENDGRID_API_KEY: {'set' if get_secret('SENDGRID_API_KEY') else '(not set)'}")
+
+    # ---- Inspector form fields (always visible) ----
     inspector_name = st.text_input("Inspector Name (required)", placeholder="Type inspector name")
     st.markdown("Check **NEED** for anything the inspector is missing. Leave unchecked if they don’t need it.")
     st.divider()
@@ -241,7 +258,6 @@ if is_admin:
 
     for idx, item in enumerate(items):
         col_need, col_value = st.columns([1, 3], vertical_alignment="center")
-
         need_key = f"need_{idx}"
         val_key = f"val_{idx}"
 
@@ -260,13 +276,13 @@ if is_admin:
                 choices = item.choices or ["Option 1", "Option 2"]
                 value = st.selectbox("", options=choices, key=val_key, label_visibility="collapsed")
 
-        # Capture truck fields even if unchecked (but only submit them if they have a value)
+        # Capture truck fields (number inputs) by label
         if item.value_field == "number" and item.label.strip().lower() == "truck model year":
             truck_model_year_value = st.session_state.get(val_key)
         if item.value_field == "number" and item.label.strip().lower() == "truck unit number":
             truck_unit_number_value = st.session_state.get(val_key)
 
-        # Only include checked items in the "needed" payload (except truck fields handled below)
+        # Only include checked items (except truck fields handled below)
         if need_checked and not is_truck_field(item.label):
             needed_results.append({"item": item.label, "value": value})
 
@@ -279,29 +295,23 @@ if is_admin:
     submit = st.button("Submit", type="primary", use_container_width=True)
 
     if submit:
-        # Validate inspector name
         if not inspector_name.strip():
             st.error("Inspector Name is required.")
             st.stop()
 
-        # Build final payload:
         final_needed = list(needed_results)
 
-        # Include truck fields only if user entered them (non-empty / non-zero)
-        # (number_input defaults to 0 if untouched; treat 0 as "not entered" for these)
+        # Include truck fields only if user actually entered them (number_input defaults to 0)
         if truck_model_year_value not in (None, 0, "0", ""):
             final_needed.append({"item": "TRUCK MODEL YEAR", "value": int(truck_model_year_value)})
 
         if truck_unit_number_value not in (None, 0, "0", ""):
             final_needed.append({"item": "TRUCK UNIT NUMBER", "value": int(truck_unit_number_value)})
 
-        # Only keep comment if anything entered
         clean_comment = comment.strip()
 
-        # Save locally (CSV)
         append_submission(inspector_name, final_needed, clean_comment)
 
-        # Email
         subject, body = build_email(inspector_name, final_needed, clean_comment)
         ok, msg = send_email_sendgrid(subject, body)
 
@@ -310,7 +320,6 @@ if is_admin:
         else:
             st.warning("Submitted and saved locally, but email failed. " + msg)
 
-        # Preview what got sent/saved
         with st.expander("Preview submission (what was sent)"):
             st.code(body)
 
