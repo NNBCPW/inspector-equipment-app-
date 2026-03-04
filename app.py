@@ -105,12 +105,6 @@ def get_secret(name: str) -> Optional[str]:
 
 
 def send_to_gsheet_webhook(payload: Dict[str, Any]) -> Tuple[bool, str]:
-    """
-    Posts to your Apps Script Web App.
-    Expected response JSON:
-      { ok: true, name: "...", spreadsheet_id: "..." }
-      or { ok: false, error: "..." }
-    """
     url = get_secret("GSHEET_WEBHOOK_URL")
     if not url:
         return False, "Missing GSHEET_WEBHOOK_URL in Streamlit Secrets."
@@ -120,7 +114,6 @@ def send_to_gsheet_webhook(payload: Dict[str, Any]) -> Tuple[bool, str]:
         if resp.status_code != 200:
             return False, f"Webhook HTTP {resp.status_code}: {resp.text}"
 
-        # Apps Script should return JSON
         data = resp.json()
         if not data.get("ok"):
             return False, f"Webhook error: {data.get('error')}"
@@ -237,7 +230,7 @@ def main():
                 choices = item.choices or ["Option 1", "Option 2"]
                 value = st.selectbox("", options=choices, key=val_key, label_visibility="collapsed")
 
-        # Capture truck fields (number inputs) by label
+        # Capture truck fields
         if item.value_field == "number" and item.label.strip().lower() == "truck model year":
             truck_model_year_value = st.session_state.get(val_key)
         if item.value_field == "number" and item.label.strip().lower() == "truck unit number":
@@ -252,8 +245,7 @@ def main():
     # ---- Comment box at end ----
     comment = st.text_area("Comments (optional)", height=120, placeholder="Type any notes here...")
 
-    # ---- Submit button ----
-    # ---- Submit button ----
+    # ---- Submit button (with anti-double-click UX) ----
     if "submitted" not in st.session_state:
         st.session_state.submitted = False
 
@@ -281,7 +273,7 @@ def main():
 
             final_needed = list(needed_results)
 
-            # Include truck fields only if user actually entered them (number_input defaults to 0)
+            # Include truck fields only if user entered them (number_input defaults to 0)
             if truck_model_year_value not in (None, 0, "0", ""):
                 final_needed.append({"item": "TRUCK MODEL YEAR", "value": int(truck_model_year_value)})
 
@@ -293,7 +285,6 @@ def main():
             # Local CSV save (optional; Streamlit Cloud storage may be temporary)
             append_submission(inspector_name, final_needed, clean_comment)
 
-            # Create a NEW Google Sheet file in your Drive folder
             payload = {
                 "inspector_name": inspector_name.strip(),
                 "comment": clean_comment,
@@ -307,5 +298,7 @@ def main():
         else:
             st.error("Submit failed. " + msg)
             st.session_state.submitted = False
-            if __name__ == "__main__":
+
+
+if __name__ == "__main__":
     main()
