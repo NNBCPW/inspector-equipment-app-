@@ -253,17 +253,17 @@ def main():
     comment = st.text_area("Comments (optional)", height=120, placeholder="Type any notes here...")
 
     # ---- Submit button ----
-if "submitted" not in st.session_state:
+    if "submitted" not in st.session_state:
     st.session_state.submitted = False
 
-submit = st.button(
+    submit = st.button(
     "Submit",
     type="primary",
     use_container_width=True,
     disabled=st.session_state.submitted
-)
+    )
 
-if submit:
+    if submit:
 
     st.session_state.submitted = True
 
