@@ -307,3 +307,5 @@ def main():
         else:
             st.error("Submit failed. " + msg)
             st.session_state.submitted = False
+            if __name__ == "__main__":
+    main()
