@@ -253,59 +253,57 @@ def main():
     comment = st.text_area("Comments (optional)", height=120, placeholder="Type any notes here...")
 
     # ---- Submit button ----
+    # ---- Submit button ----
     if "submitted" not in st.session_state:
-    st.session_state.submitted = False
+        st.session_state.submitted = False
 
     submit = st.button(
-    "Submit",
-    type="primary",
-    use_container_width=True,
-    disabled=st.session_state.submitted
+        "Submit",
+        type="primary",
+        use_container_width=True,
+        disabled=st.session_state.submitted
     )
 
     if submit:
+        st.session_state.submitted = True
 
-    st.session_state.submitted = True
+        st.warning(
+            "Submitting request... Please wait for confirmation. "
+            "Do NOT refresh the page or press Submit again."
+        )
 
-    st.warning(
-        "Submitting request... Please wait for confirmation. "
-        "Do NOT refresh the page or press Submit again."
-    )
+        with st.spinner("Submitting request to system..."):
 
-    with st.spinner("Submitting request to system..."):
+            if not inspector_name.strip():
+                st.error("Inspector Name is required.")
+                st.session_state.submitted = False
+                st.stop()
 
-        if not inspector_name.strip():
-            st.error("Inspector Name is required.")
-            st.session_state.submitted = False
-            st.stop()
+            final_needed = list(needed_results)
 
-        final_needed = list(needed_results)
+            # Include truck fields only if user actually entered them (number_input defaults to 0)
+            if truck_model_year_value not in (None, 0, "0", ""):
+                final_needed.append({"item": "TRUCK MODEL YEAR", "value": int(truck_model_year_value)})
 
-        # Include truck fields only if user actually entered them (number_input defaults to 0)
-        if truck_model_year_value not in (None, 0, "0", ""):
-            final_needed.append({"item": "TRUCK MODEL YEAR", "value": int(truck_model_year_value)})
+            if truck_unit_number_value not in (None, 0, "0", ""):
+                final_needed.append({"item": "TRUCK UNIT NUMBER", "value": int(truck_unit_number_value)})
 
-        if truck_unit_number_value not in (None, 0, "0", ""):
-            final_needed.append({"item": "TRUCK UNIT NUMBER", "value": int(truck_unit_number_value)})
+            clean_comment = comment.strip()
 
-        clean_comment = comment.strip()
+            # Local CSV save (optional; Streamlit Cloud storage may be temporary)
+            append_submission(inspector_name, final_needed, clean_comment)
 
-        # Local CSV save (optional; Streamlit Cloud storage may be temporary)
-        append_submission(inspector_name, final_needed, clean_comment)
-
-        # Create a NEW Google Sheet file in your Drive folder
-        payload = {
-            "inspector_name": inspector_name.strip(),
-            "comment": clean_comment,
-            "items": final_needed,
-        }
-        ok, msg = send_to_gsheet_webhook(payload)
+            # Create a NEW Google Sheet file in your Drive folder
+            payload = {
+                "inspector_name": inspector_name.strip(),
+                "comment": clean_comment,
+                "items": final_needed,
+            }
+            ok, msg = send_to_gsheet_webhook(payload)
 
         if ok:
             st.success("Submitted successfully. " + msg)
+            st.info("You may now close this page.")
         else:
             st.error("Submit failed. " + msg)
-
-
-if __name__ == "__main__":
-    main()
+            st.session_state.submitted = False
