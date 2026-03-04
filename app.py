@@ -179,8 +179,10 @@ def main():
     st.title(APP_TITLE)
 
     items = load_items()
-
+params = st.query_params
+is_admin = str(params.get("admin", "0")).strip() == "1"
     # ---- Sidebar admin (no password) ----
+if is_admin:
     with st.sidebar:
         st.header("Admin (No Password)")
         st.caption("Adds items to the bottom of the list.")
@@ -227,7 +229,6 @@ def main():
         st.text(f"TO_EMAIL: {get_secret('TO_EMAIL') or 'nicholas.nabholz@bexar.org'}")
         st.text(f"FROM_EMAIL: {get_secret('FROM_EMAIL') or '(not set)'}")
         st.text(f"SENDGRID_API_KEY: {'set' if get_secret('SENDGRID_API_KEY') else '(not set)'}")
-
     # ---- Form fields (top) ----
     inspector_name = st.text_input("Inspector Name (required)", placeholder="Type inspector name")
     st.markdown("Check **NEED** for anything the inspector is missing. Leave unchecked if they don’t need it.")
