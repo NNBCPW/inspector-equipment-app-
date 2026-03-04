@@ -1,0 +1,89 @@
+{
+  "items": [
+    {"label": "SMART LEVEL", "value_field": "none"},
+    {"label": "6' LEVEL", "value_field": "none"},
+    {"label": "MEASURING WHEEL", "value_field": "none"},
+    {"label": "1\" % GUAGE", "value_field": "none"},
+    {"label": "HAMMER CLAW / SLEDGE", "value_field": "none"},
+    {"label": "MEASURING TAPE", "value_field": "none"},
+    {"label": "THEMOMETER", "value_field": "none"},
+    {"label": "BLANK", "value_field": "none"},
+    {"label": "RUBBER BOOTS", "value_field": "none"},
+    {"label": "6' FOLDING RULE", "value_field": "none"},
+    {"label": "HARD HAT SUN VISOR", "value_field": "none"},
+    {"label": "TAPE MEASURE", "value_field": "none"},
+    {"label": "SAFETY BELT", "value_field": "none"},
+    {"label": "HARD HAT", "value_field": "none"},
+    {"label": "LEATHER GLOVES", "value_field": "none"},
+    {"label": "MAXIFLEX GLOVES", "value_field": "none"},
+    {"label": "SAFETY GLASSES", "value_field": "none"},
+    {"label": "STRING LINE", "value_field": "none"},
+    {"label": "GRADE PINS FOR STRING LINE", "value_field": "none"},
+    {"label": "PAINT WAND", "value_field": "none"},
+    {"label": "CLEANING SPRAY", "value_field": "none"},
+    {"label": "SHOP TOWELS", "value_field": "none"},
+    {"label": "SMART LEVEL BATTERIES AA", "value_field": "none"},
+    {"label": "SMART LEVEL BATTERIES 9V", "value_field": "none"},
+
+    {"label": "SUNGLASSES", "value_field": "none"},
+    {"label": "HIGH VIS WINTER JACKET/COAT", "value_field": "none"},
+    {"label": "HIGH VIS / REFLECTIVE RAIN SUIT", "value_field": "none"},
+    {"label": "HIGH VIS JACKET", "value_field": "none"},
+    {"label": "SHOVELS", "value_field": "none"},
+    {"label": "MINI ENGINEERING SCALE", "value_field": "none"},
+    {"label": "BROOM", "value_field": "none"},
+    {"label": "LOGITECH BLUETOOTH MOUSE", "value_field": "none"},
+    {"label": "PENS", "value_field": "none"},
+    {"label": "MECHANICAL PENCILS", "value_field": "none"},
+    {"label": "HIGHLIGHTERS", "value_field": "none"},
+    {"label": "MARKERS", "value_field": "none"},
+    {"label": "TABLETS SMALL (Legal pads)", "value_field": "none"},
+    {"label": "TABLETS LARGE (Legal pads)", "value_field": "none"},
+    {"label": "Sticky notes", "value_field": "none"},
+    {"label": "Page stickies", "value_field": "none"},
+    {"label": "PAPER CLIPS / BINDER CLIPS", "value_field": "none"},
+    {"label": "1\" BINDERS", "value_field": "none"},
+    {"label": "MANILA FOLDERS", "value_field": "none"},
+    {"label": "POCKET FOLDERS", "value_field": "none"},
+    {"label": "PAGE DIVIDERS", "value_field": "none"},
+    {"label": "SHEET PROTECTORS", "value_field": "none"},
+    {"label": "SURVEYER BOOKLET", "value_field": "none"},
+    {"label": "INDIVIDUAL WRAPPED EAR PLUGS", "value_field": "none"},
+
+    {"label": "BUG SPRAY", "value_field": "none"},
+    {"label": "WHITE OUT", "value_field": "none"},
+
+    {"label": "GATORADE POWDER", "value_field": "none"},
+    {"label": "GOJO HAND CLEANER", "value_field": "none"},
+    {"label": "APPLE IPHONE CHARGER / CABLE", "value_field": "none"},
+
+    {
+      "label": "GLOVE SIZE",
+      "value_field": "choice",
+      "choices": ["S", "M", "L", "XL", "XXL", "XXXL", "XXXXL"]
+    },
+    {
+      "label": "VEST SIZE",
+      "value_field": "choice",
+      "choices": ["S", "M", "L", "XL", "XXL", "XXXL", "XXXXL"]
+    },
+    {
+      "label": "JACKET SIZE",
+      "value_field": "choice",
+      "choices": ["S", "M", "L", "XL", "XXL", "XXXL", "XXXXL"]
+    },
+
+    {"label": "Type Custom Here", "value_field": "text"},
+    {"label": "Type Custom Here", "value_field": "text"},
+
+    {"label": "RUNNING BOARDS", "value_field": "none"},
+    {"label": "HEADACHE RACK", "value_field": "none"},
+    {"label": "TOOL BOX", "value_field": "none"},
+    {"label": "LIGHTBAR /CONTROL BOX", "value_field": "none"},
+    {"label": "INVERTER", "value_field": "none"},
+    {"label": "LAPTOP STAND AND DOCKING STATION", "value_field": "none"},
+
+    {"label": "TRUCK MODEL YEAR", "value_field": "number"},
+    {"label": "TRUCK UNIT NUMBER", "value_field": "number"}
+  ]
+}
