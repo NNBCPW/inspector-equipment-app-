@@ -253,11 +253,30 @@ def main():
     comment = st.text_area("Comments (optional)", height=120, placeholder="Type any notes here...")
 
     # ---- Submit button ----
-    submit = st.button("Submit", type="primary", use_container_width=True)
+if "submitted" not in st.session_state:
+    st.session_state.submitted = False
 
-    if submit:
+submit = st.button(
+    "Submit",
+    type="primary",
+    use_container_width=True,
+    disabled=st.session_state.submitted
+)
+
+if submit:
+
+    st.session_state.submitted = True
+
+    st.warning(
+        "Submitting request... Please wait for confirmation. "
+        "Do NOT refresh the page or press Submit again."
+    )
+
+    with st.spinner("Submitting request to system..."):
+
         if not inspector_name.strip():
             st.error("Inspector Name is required.")
+            st.session_state.submitted = False
             st.stop()
 
         final_needed = list(needed_results)
