@@ -5,15 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+import requests
 import streamlit as st
-
-# ---- Optional email support (SendGrid) ----
-try:
-    from sendgrid import SendGridAPIClient
-    from sendgrid.helpers.mail import Mail
-except Exception:
-    SendGridAPIClient = None
-    Mail = None
 
 
 APP_TITLE = "Inspector Equipment – Need List"
@@ -101,7 +94,7 @@ def download_csv_button():
         )
 
 
-# ---------- Email helpers ----------
+# ---------- Secrets + Webhook ----------
 def get_secret(name: str) -> Optional[str]:
     try:
         if name in st.secrets:
@@ -111,66 +104,36 @@ def get_secret(name: str) -> Optional[str]:
     return os.getenv(name)
 
 
-def send_email_sendgrid(subject: str, body_text: str) -> Tuple[bool, str]:
-    api_key = get_secret("SENDGRID_API_KEY")
-    from_email = get_secret("FROM_EMAIL")
-    to_email = get_secret("TO_EMAIL") or "nicholas.nabholz@bexar.org"
-
-    if not api_key or not from_email:
-        return False, "Email not configured. Missing SENDGRID_API_KEY and/or FROM_EMAIL in secrets/env."
-
-    if SendGridAPIClient is None or Mail is None:
-        return False, "SendGrid library not available. Add sendgrid to requirements.txt."
+def send_to_gsheet_webhook(payload: Dict[str, Any]) -> Tuple[bool, str]:
+    """
+    Posts to your Apps Script Web App.
+    Expected response JSON:
+      { ok: true, name: "...", spreadsheet_id: "..." }
+      or { ok: false, error: "..." }
+    """
+    url = get_secret("GSHEET_WEBHOOK_URL")
+    if not url:
+        return False, "Missing GSHEET_WEBHOOK_URL in Streamlit Secrets."
 
     try:
-        message = Mail(
-            from_email=from_email,
-            to_emails=to_email,
-            subject=subject,
-            plain_text_content=body_text,
-        )
-        sg = SendGridAPIClient(api_key)
-        resp = sg.send(message)
-        if 200 <= resp.status_code < 300:
-            return True, f"Email sent to {to_email}."
-        return False, f"SendGrid returned status {resp.status_code}."
+        resp = requests.post(url, json=payload, timeout=25)
+        if resp.status_code != 200:
+            return False, f"Webhook HTTP {resp.status_code}: {resp.text}"
+
+        # Apps Script should return JSON
+        data = resp.json()
+        if not data.get("ok"):
+            return False, f"Webhook error: {data.get('error')}"
+
+        return True, f"Created Google Sheet: {data.get('name')}"
     except Exception as e:
-        return False, f"Email error: {e}"
+        return False, f"Webhook request failed: {e}"
 
 
 # ---------- Business logic ----------
 def is_truck_field(label: str) -> bool:
     l = label.strip().lower()
     return l in {"truck model year", "truck unit number"}
-
-
-def build_email(inspector_name: str, needed_rows: List[Dict[str, Any]], comment: str) -> Tuple[str, str]:
-    ts_local = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    subject = f"Inspector Equipment NEED List – {inspector_name} – {ts_local}"
-
-    lines = []
-    lines.append(f"Inspector: {inspector_name}")
-    lines.append(f"Submitted: {ts_local}")
-    lines.append("")
-    lines.append("NEEDED ITEMS:")
-
-    if not needed_rows:
-        lines.append("None selected.")
-    else:
-        for row in needed_rows:
-            label = row.get("item", "")
-            value = row.get("value", None)
-            if value is None or str(value).strip() == "":
-                lines.append(f"- {label}")
-            else:
-                lines.append(f"- {label}: {value}")
-
-    if comment.strip():
-        lines.append("")
-        lines.append("COMMENT:")
-        lines.append(comment.strip())
-
-    return subject, "\n".join(lines)
 
 
 def main():
@@ -236,17 +199,15 @@ def main():
                         st.rerun()
 
             st.divider()
-            st.subheader("Submissions")
+            st.subheader("Submissions (local CSV)")
             download_csv_button()
 
             st.divider()
-            st.subheader("Email Settings")
-            st.caption("Uses SendGrid. Configure via Streamlit Secrets.")
-            st.text(f"TO_EMAIL: {get_secret('TO_EMAIL') or 'nicholas.nabholz@bexar.org'}")
-            st.text(f"FROM_EMAIL: {get_secret('FROM_EMAIL') or '(not set)'}")
-            st.text(f"SENDGRID_API_KEY: {'set' if get_secret('SENDGRID_API_KEY') else '(not set)'}")
+            st.subheader("Google Sheet Webhook")
+            st.caption("Creates a new Google Sheet file in your Drive folder per Submit.")
+            st.text(f"GSHEET_WEBHOOK_URL: {'set' if get_secret('GSHEET_WEBHOOK_URL') else '(not set)'}")
 
-    # ---- Inspector form fields (always visible) ----
+    # ---- Inspector form fields ----
     inspector_name = st.text_input("Inspector Name (required)", placeholder="Type inspector name")
     st.markdown("Check **NEED** for anything the inspector is missing. Leave unchecked if they don’t need it.")
     st.divider()
@@ -310,18 +271,21 @@ def main():
 
         clean_comment = comment.strip()
 
+        # Local CSV save (optional; Streamlit Cloud storage may be temporary)
         append_submission(inspector_name, final_needed, clean_comment)
 
-        subject, body = build_email(inspector_name, final_needed, clean_comment)
-        ok, msg = send_email_sendgrid(subject, body)
+        # Create a NEW Google Sheet file in your Drive folder
+        payload = {
+            "inspector_name": inspector_name.strip(),
+            "comment": clean_comment,
+            "items": final_needed,
+        }
+        ok, msg = send_to_gsheet_webhook(payload)
 
         if ok:
             st.success("Submitted successfully. " + msg)
         else:
-            st.warning("Submitted and saved locally, but email failed. " + msg)
-
-        with st.expander("Preview submission (what was sent)"):
-            st.code(body)
+            st.error("Submit failed. " + msg)
 
 
 if __name__ == "__main__":
