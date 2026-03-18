@@ -361,7 +361,7 @@ def main() -> None:
         st.session_state.last_pdf_filename = None
 
         st.warning(
-            "Submitting request... Please wait for confirmation. "
+            "WAIT FOR DOWNLOAD PDF BUTTON Submitting request... Please wait for confirmation. "
             "Do NOT refresh the page or press Submit again."
         )
 
@@ -393,7 +393,7 @@ def main() -> None:
                 st.session_state.submitted = False
                 st.stop()
 
-        st.success("Submitted successfully.")
+        st.success("Submitted successfully. Click download PDF button below")
         st.info("Download the PDF below, then attach it to an email.")
         st.session_state.submitted = False
 
