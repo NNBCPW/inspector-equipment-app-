@@ -1,18 +1,22 @@
 import csv
+import io
 import json
 import os
+import textwrap
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-import requests
 import streamlit as st
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 
 
 APP_TITLE = "Inspector Equipment – Need List"
 DATA_DIR = "data"
 ITEMS_PATH = os.path.join(DATA_DIR, "items.json")
 SUBMISSIONS_PATH = os.path.join(DATA_DIR, "submissions.csv")
+DEFAULT_SEND_TO = "NICHOLAS.NABHOLZ@BEXAR.ORG"
 
 
 @dataclass
@@ -23,12 +27,13 @@ class Item:
 
 
 # ---------- Storage helpers ----------
-def ensure_data_dir():
+def ensure_data_dir() -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
 
 
 def load_items() -> List[Item]:
     ensure_data_dir()
+
     if not os.path.exists(ITEMS_PATH):
         with open(ITEMS_PATH, "w", encoding="utf-8") as f:
             json.dump({"items": []}, f, indent=2)
@@ -38,15 +43,20 @@ def load_items() -> List[Item]:
 
     items: List[Item] = []
     for it in raw.get("items", []):
-        items.append(
-            Item(
-                label=str(it.get("label", "")).strip(),
-                value_field=str(it.get("value_field", "none")).strip().lower(),
-                choices=it.get("choices"),
-            )
-        )
+        label = str(it.get("label", "")).strip()
+        value_field = str(it.get("value_field", "none")).strip().lower()
+        choices = it.get("choices")
 
-    return [i for i in items if i.label]
+        if label:
+            items.append(
+                Item(
+                    label=label,
+                    value_field=value_field if value_field in {"none", "text", "number", "choice"} else "none",
+                    choices=choices if isinstance(choices, list) else None,
+                )
+            )
+
+    return items
 
 
 def save_items(items: List[Item]) -> None:
@@ -65,7 +75,7 @@ def save_items(items: List[Item]) -> None:
         json.dump(payload, f, indent=2)
 
 
-def ensure_submissions_file():
+def ensure_submissions_file() -> None:
     ensure_data_dir()
     if not os.path.exists(SUBMISSIONS_PATH):
         with open(SUBMISSIONS_PATH, "w", newline="", encoding="utf-8") as f:
@@ -81,46 +91,104 @@ def append_submission(inspector_name: str, needed: List[Dict[str, Any]], comment
         w.writerow([ts, inspector_name.strip(), json.dumps(needed, ensure_ascii=False), comment.strip()])
 
 
-def download_csv_button():
+def download_csv_button() -> None:
     if not os.path.exists(SUBMISSIONS_PATH):
         return
+
     with open(SUBMISSIONS_PATH, "rb") as f:
         st.download_button(
             label="Download submissions CSV",
-            data=f,
+            data=f.read(),
             file_name="submissions.csv",
             mime="text/csv",
             use_container_width=True,
         )
 
 
-# ---------- Secrets + Webhook ----------
-def get_secret(name: str) -> Optional[str]:
-    try:
-        if name in st.secrets:
-            return str(st.secrets[name])
-    except Exception:
-        pass
-    return os.getenv(name)
+# ---------- PDF helpers ----------
+def safe_filename(value: str) -> str:
+    cleaned = "".join(ch for ch in value if ch.isalnum() or ch in (" ", "_", "-")).strip()
+    cleaned = cleaned.replace(" ", "_")
+    return cleaned or "receipt"
 
 
-def send_to_gsheet_webhook(payload: Dict[str, Any]) -> Tuple[bool, str]:
-    url = get_secret("GSHEET_WEBHOOK_URL")
-    if not url:
-        return False, "Missing GSHEET_WEBHOOK_URL in Streamlit Secrets."
+def wrap_text_lines(text: str, width: int = 90) -> List[str]:
+    if not text:
+        return [""]
+    lines: List[str] = []
+    for paragraph in str(text).splitlines() or [""]:
+        wrapped = textwrap.wrap(paragraph, width=width) if paragraph else [""]
+        lines.extend(wrapped)
+    return lines or [""]
 
-    try:
-        resp = requests.post(url, json=payload, timeout=25)
-        if resp.status_code != 200:
-            return False, f"Webhook HTTP {resp.status_code}: {resp.text}"
 
-        data = resp.json()
-        if not data.get("ok"):
-            return False, f"Webhook error: {data.get('error')}"
+def create_receipt_pdf(
+    inspector_name: str,
+    needed: List[Dict[str, Any]],
+    comment: str,
+) -> tuple[str, bytes]:
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    _, page_height = letter
 
-        return True, f"Created Google Sheet: {data.get('name')}"
-    except Exception as e:
-        return False, f"Webhook request failed: {e}"
+    left_margin = 50
+    top_y = page_height - 50
+    y = top_y
+
+    def new_page() -> None:
+        nonlocal y
+        pdf.showPage()
+        y = top_y
+        pdf.setFont("Helvetica", 11)
+
+    def draw_line(line: str, font_name: str = "Helvetica", font_size: int = 11, gap: int = 16) -> None:
+        nonlocal y
+        if y < 60:
+            new_page()
+        pdf.setFont(font_name, font_size)
+        pdf.drawString(left_margin, y, line)
+        y -= gap
+
+    pdf.setTitle("Equipment Request Receipt")
+
+    draw_line("Equipment Request Receipt", font_name="Helvetica-Bold", font_size=16, gap=24)
+    draw_line(f"Created: {datetime.now().strftime('%Y-%m-%d %I:%M %p')}")
+    draw_line(f"Inspector: {inspector_name.strip()}", font_name="Helvetica-Bold")
+    draw_line("")
+
+    draw_line("Requested Equipment / Items", font_name="Helvetica-Bold", font_size=12, gap=18)
+
+    if needed:
+        for idx, entry in enumerate(needed, start=1):
+            item_name = str(entry.get("item", "")).strip()
+            item_value = entry.get("value", "")
+
+            if item_value is None or str(item_value).strip() == "":
+                line = f"{idx}. {item_name}"
+                draw_line(line)
+            else:
+                line = f"{idx}. {item_name}: {item_value}"
+                for wrapped in wrap_text_lines(line, width=88):
+                    draw_line(wrapped)
+    else:
+        draw_line("No items selected.")
+
+    draw_line("")
+    draw_line("Comments", font_name="Helvetica-Bold", font_size=12, gap=18)
+
+    if comment.strip():
+        for wrapped in wrap_text_lines(comment.strip(), width=88):
+            draw_line(wrapped)
+    else:
+        draw_line("None")
+
+    pdf.save()
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"equipment_receipt_{safe_filename(inspector_name)}_{timestamp}.pdf"
+    return filename, pdf_bytes
 
 
 # ---------- Business logic ----------
@@ -129,17 +197,35 @@ def is_truck_field(label: str) -> bool:
     return l in {"truck model year", "truck unit number"}
 
 
-def main():
+def main() -> None:
     st.set_page_config(page_title=APP_TITLE, layout="centered")
+
+    st.markdown(
+        """
+        <style>
+        section[data-testid="stSidebar"] button[kind="secondary"],
+        div.stButton > button {
+            min-height: 52px !important;
+            font-size: 16px !important;
+            font-weight: 700 !important;
+            border-radius: 10px !important;
+        }
+
+        div.stButton > button {
+            white-space: nowrap !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.title(APP_TITLE)
 
     items = load_items()
 
-    # ---- Admin flag via URL ----
     params = st.query_params
     is_admin = str(params.get("admin", "0")).strip() == "1"
 
-    # ---- Hide sidebar completely for non-admin users ----
     if not is_admin:
         st.markdown(
             """
@@ -147,13 +233,12 @@ def main():
               section[data-testid="stSidebar"] {display:none !important;}
               div[data-testid="collapsedControl"] {display:none !important;}
               header button {display:none !important;}
-              .block-container {padding-left: 1rem !important;}
+              .block-container {padding-left: 1rem !important; padding-right: 1rem !important;}
             </style>
             """,
             unsafe_allow_html=True,
         )
 
-    # ---- Sidebar admin (ONLY for admin link) ----
     if is_admin:
         with st.sidebar:
             st.header("Admin (No Password)")
@@ -164,7 +249,7 @@ def main():
                 value_field = st.selectbox(
                     "Optional right-side field",
                     options=["none", "text", "number", "choice"],
-                    help="none = checkbox only. text/number = small box. choice = dropdown.",
+                    help="none = button only. text/number = small box. choice = dropdown.",
                 )
 
                 choice_text = ""
@@ -195,28 +280,38 @@ def main():
             st.subheader("Submissions (local CSV)")
             download_csv_button()
 
-            st.divider()
-            st.subheader("Google Sheet Webhook")
-            st.caption("Creates a new Google Sheet file in your Drive folder per Submit.")
-            st.text(f"GSHEET_WEBHOOK_URL: {'set' if get_secret('GSHEET_WEBHOOK_URL') else '(not set)'}")
-
-    # ---- Inspector form fields ----
     inspector_name = st.text_input("Inspector Name (required)", placeholder="Type inspector name")
-    st.markdown("Check **NEED** for anything the inspector is missing. Leave unchecked if they don’t need it.")
+    st.markdown("Tap **NEED** for anything the inspector is missing. Leave it off if they do not need it.")
     st.divider()
 
-    # ---- Render vertical list ----
     needed_results: List[Dict[str, Any]] = []
     truck_model_year_value = None
     truck_unit_number_value = None
 
     for idx, item in enumerate(items):
-        col_need, col_value = st.columns([1, 3], vertical_alignment="center")
+        col_need, col_value = st.columns([1.15, 3], vertical_alignment="center")
         need_key = f"need_{idx}"
         val_key = f"val_{idx}"
 
         with col_need:
-            need_checked = st.checkbox("NEED", key=need_key)
+            if need_key not in st.session_state:
+                st.session_state[need_key] = False
+
+            def toggle_need(k=need_key):
+                st.session_state[k] = not st.session_state[k]
+
+            is_on = st.session_state[need_key]
+            btn_label = "✅ NEED" if is_on else "⬜ NEED"
+
+            st.button(
+                btn_label,
+                key=f"btn_{need_key}",
+                on_click=toggle_need,
+                use_container_width=True,
+                type="primary" if is_on else "secondary",
+            )
+
+            need_checked = st.session_state[need_key]
 
         with col_value:
             st.markdown(f"**{item.label}**")
@@ -230,24 +325,27 @@ def main():
                 choices = item.choices or ["Option 1", "Option 2"]
                 value = st.selectbox("", options=choices, key=val_key, label_visibility="collapsed")
 
-        # Capture truck fields
         if item.value_field == "number" and item.label.strip().lower() == "truck model year":
             truck_model_year_value = st.session_state.get(val_key)
+
         if item.value_field == "number" and item.label.strip().lower() == "truck unit number":
             truck_unit_number_value = st.session_state.get(val_key)
 
-        # Only include checked items (except truck fields handled below)
         if need_checked and not is_truck_field(item.label):
             needed_results.append({"item": item.label, "value": value})
 
         st.divider()
 
-    # ---- Comment box at end ----
     comment = st.text_area("Comments (optional)", height=120, placeholder="Type any notes here...")
 
-    # ---- Submit button (with anti-double-click UX) ----
     if "submitted" not in st.session_state:
         st.session_state.submitted = False
+    if "last_pdf_bytes" not in st.session_state:
+        st.session_state.last_pdf_bytes = None
+    if "last_pdf_filename" not in st.session_state:
+        st.session_state.last_pdf_filename = None
+    if "last_success" not in st.session_state:
+        st.session_state.last_success = False
 
     submit = st.button(
         "Submit",
@@ -258,14 +356,16 @@ def main():
 
     if submit:
         st.session_state.submitted = True
+        st.session_state.last_success = False
+        st.session_state.last_pdf_bytes = None
+        st.session_state.last_pdf_filename = None
 
         st.warning(
             "Submitting request... Please wait for confirmation. "
             "Do NOT refresh the page or press Submit again."
         )
 
-        with st.spinner("Submitting request to system..."):
-
+        with st.spinner("Submitting request..."):
             if not inspector_name.strip():
                 st.error("Inspector Name is required.")
                 st.session_state.submitted = False
@@ -273,7 +373,6 @@ def main():
 
             final_needed = list(needed_results)
 
-            # Include truck fields only if user entered them (number_input defaults to 0)
             if truck_model_year_value not in (None, 0, "0", ""):
                 final_needed.append({"item": "TRUCK MODEL YEAR", "value": int(truck_model_year_value)})
 
@@ -282,22 +381,32 @@ def main():
 
             clean_comment = comment.strip()
 
-            # Local CSV save (optional; Streamlit Cloud storage may be temporary)
-            append_submission(inspector_name, final_needed, clean_comment)
+            try:
+                append_submission(inspector_name, final_needed, clean_comment)
+                pdf_filename, pdf_bytes = create_receipt_pdf(inspector_name, final_needed, clean_comment)
 
-            payload = {
-                "inspector_name": inspector_name.strip(),
-                "comment": clean_comment,
-                "items": final_needed,
-            }
-            ok, msg = send_to_gsheet_webhook(payload)
+                st.session_state.last_pdf_filename = pdf_filename
+                st.session_state.last_pdf_bytes = pdf_bytes
+                st.session_state.last_success = True
+            except Exception as e:
+                st.error(f"Submit failed: {e}")
+                st.session_state.submitted = False
+                st.stop()
 
-        if ok:
-            st.success("Submitted successfully. " + msg)
-            st.info("You may now close this page.")
-        else:
-            st.error("Submit failed. " + msg)
-            st.session_state.submitted = False
+        st.success("Submitted successfully.")
+        st.info("Download the PDF below, then attach it to an email.")
+        st.session_state.submitted = False
+
+    if st.session_state.last_success and st.session_state.last_pdf_bytes and st.session_state.last_pdf_filename:
+        st.download_button(
+            label="Download PDF Receipt",
+            data=st.session_state.last_pdf_bytes,
+            file_name=st.session_state.last_pdf_filename,
+            mime="application/pdf",
+            use_container_width=True,
+        )
+
+        st.warning(f"ATTACH DOWNLOADED PDF AND EMAIL TO: {DEFAULT_SEND_TO}")
 
 
 if __name__ == "__main__":
