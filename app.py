@@ -186,8 +186,8 @@ def create_receipt_pdf(
     pdf_bytes = buffer.getvalue()
     buffer.close()
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"equipment_receipt_{safe_filename(inspector_name)}_{timestamp}.pdf"
+    request_date = datetime.now().strftime("%Y-%m-%d")
+    filename = f"Equipment requested by {safe_filename(inspector_name)} {request_date}.pdf"
     return filename, pdf_bytes
 
 
@@ -355,60 +355,50 @@ def main() -> None:
     )
 
     if submit:
-        st.session_state.submitted = True
-        st.session_state.last_success = False
-        st.session_state.last_pdf_bytes = None
-        st.session_state.last_pdf_filename = None
+    st.session_state.submitted = True
+    st.session_state.last_success = False
+    st.session_state.last_pdf_bytes = None
+    st.session_state.last_pdf_filename = None
 
-        st.warning(
-            " Submitting request... Please wait for confirmation. "
-            "Do NOT refresh the page or press Submit again."
-            "Scroll Down."
-        )
+    st.warning("Do not refresh page. Wait for download button to appear.")
 
-        with st.spinner("Submitting request..."):
-            if not inspector_name.strip():
-                st.error("Inspector Name is required.")
-                st.session_state.submitted = False
-                st.stop()
-
-            final_needed = list(needed_results)
-
-            if truck_model_year_value not in (None, 0, "0", ""):
-                final_needed.append({"item": "TRUCK MODEL YEAR", "value": int(truck_model_year_value)})
-
-            if truck_unit_number_value not in (None, 0, "0", ""):
-                final_needed.append({"item": "TRUCK UNIT NUMBER", "value": int(truck_unit_number_value)})
-
-            clean_comment = comment.strip()
-
-            try:
-                append_submission(inspector_name, final_needed, clean_comment)
-                pdf_filename, pdf_bytes = create_receipt_pdf(inspector_name, final_needed, clean_comment)
-
-                st.session_state.last_pdf_filename = pdf_filename
-                st.session_state.last_pdf_bytes = pdf_bytes
-                st.session_state.last_success = True
-            except Exception as e:
-                st.error(f"Submit failed: {e}")
-                st.session_state.submitted = False
-                st.stop()
-
-        st.success("Submitted successfully. SCROLL DOWN")
-        st.info("Click Download PDF, then Email it")
+    if not inspector_name.strip():
+        st.error("Inspector Name is required.")
         st.session_state.submitted = False
+        st.stop()
 
-    if st.session_state.last_success and st.session_state.last_pdf_bytes and st.session_state.last_pdf_filename:
-        st.download_button(
-            label="CLICK TO DOWNLOAD PDF Receipt",
-            data=st.session_state.last_pdf_bytes,
-            file_name=st.session_state.last_pdf_filename,
-            mime="application/pdf",
-            use_container_width=True,
-        )
+    final_needed = list(needed_results)
 
-        st.warning(f"ATTACH DOWNLOADED PDF AND EMAIL TO: {DEFAULT_SEND_TO}")
+    if truck_model_year_value not in (None, 0, "0", ""):
+        final_needed.append({"item": "TRUCK MODEL YEAR", "value": int(truck_model_year_value)})
 
+    if truck_unit_number_value not in (None, 0, "0", ""):
+        final_needed.append({"item": "TRUCK UNIT NUMBER", "value": int(truck_unit_number_value)})
+
+    clean_comment = comment.strip()
+
+    try:
+        append_submission(inspector_name, final_needed, clean_comment)
+        pdf_filename, pdf_bytes = create_receipt_pdf(inspector_name, final_needed, clean_comment)
+
+        st.session_state.last_pdf_filename = pdf_filename
+        st.session_state.last_pdf_bytes = pdf_bytes
+        st.session_state.last_success = True
+    except Exception as e:
+        st.error(f"Submit failed: {e}")
+        st.session_state.submitted = False
+        st.stop()
+
+    st.session_state.submitted = False
+
+if st.session_state.last_success and st.session_state.last_pdf_bytes and st.session_state.last_pdf_filename:
+    st.download_button(
+        label="Download PDF Receipt",
+        data=st.session_state.last_pdf_bytes,
+        file_name=st.session_state.last_pdf_filename,
+        mime="application/pdf",
+        use_container_width=True,
+    )
 
 if __name__ == "__main__":
     main()
