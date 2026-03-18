@@ -16,7 +16,7 @@ APP_TITLE = "Inspector Equipment – Need List"
 DATA_DIR = "data"
 ITEMS_PATH = os.path.join(DATA_DIR, "items.json")
 SUBMISSIONS_PATH = os.path.join(DATA_DIR, "submissions.csv")
-DEFAULT_SEND_TO = "NICHOLAS.NABHOLZ@BEXAR.ORG"
+ADMIN_SETTINGS_PATH = os.path.join(DATA_DIR, "admin_settings.json")
 
 
 @dataclass
@@ -105,11 +105,47 @@ def download_csv_button() -> None:
         )
 
 
+# ---------- Admin settings ----------
+def load_admin_settings() -> Dict[str, Any]:
+    ensure_data_dir()
+
+    defaults = {
+        "submit_popup_enabled": False,
+        "submit_popup_message": "",
+    }
+
+    if not os.path.exists(ADMIN_SETTINGS_PATH):
+        with open(ADMIN_SETTINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(defaults, f, indent=2)
+        return defaults
+
+    try:
+        with open(ADMIN_SETTINGS_PATH, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except Exception:
+        raw = {}
+
+    settings = {
+        "submit_popup_enabled": bool(raw.get("submit_popup_enabled", False)),
+        "submit_popup_message": str(raw.get("submit_popup_message", "")).strip(),
+    }
+    return settings
+
+
+def save_admin_settings(settings: Dict[str, Any]) -> None:
+    ensure_data_dir()
+    payload = {
+        "submit_popup_enabled": bool(settings.get("submit_popup_enabled", False)),
+        "submit_popup_message": str(settings.get("submit_popup_message", "")).strip(),
+    }
+    with open(ADMIN_SETTINGS_PATH, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+
+
 # ---------- PDF helpers ----------
 def safe_filename(value: str) -> str:
     cleaned = "".join(ch for ch in value if ch.isalnum() or ch in (" ", "_", "-")).strip()
-    cleaned = cleaned.replace(" ", "_")
-    return cleaned or "receipt"
+    return cleaned or "Inspector"
 
 
 def wrap_text_lines(text: str, width: int = 90) -> List[str]:
@@ -222,6 +258,7 @@ def main() -> None:
     st.title(APP_TITLE)
 
     items = load_items()
+    admin_settings = load_admin_settings()
 
     params = st.query_params
     is_admin = str(params.get("admin", "0")).strip() == "1"
@@ -275,6 +312,33 @@ def main() -> None:
                         save_items(items)
                         st.success("Added.")
                         st.rerun()
+
+            st.divider()
+            st.subheader("Submit Popup Message")
+
+            with st.form("admin_submit_popup_form"):
+                popup_enabled = st.toggle(
+                    "Show custom popup after submit",
+                    value=admin_settings.get("submit_popup_enabled", False),
+                )
+                popup_message = st.text_area(
+                    "Custom popup message",
+                    value=admin_settings.get("submit_popup_message", ""),
+                    height=120,
+                    placeholder="Type the custom message users should see after they click Submit",
+                )
+
+                save_popup = st.form_submit_button("Save popup settings", use_container_width=True)
+
+                if save_popup:
+                    save_admin_settings(
+                        {
+                            "submit_popup_enabled": popup_enabled,
+                            "submit_popup_message": popup_message,
+                        }
+                    )
+                    st.success("Popup settings saved.")
+                    st.rerun()
 
             st.divider()
             st.subheader("Submissions (local CSV)")
@@ -346,6 +410,10 @@ def main() -> None:
         st.session_state.last_pdf_filename = None
     if "last_success" not in st.session_state:
         st.session_state.last_success = False
+    if "show_submit_popup" not in st.session_state:
+        st.session_state.show_submit_popup = False
+    if "submit_popup_message" not in st.session_state:
+        st.session_state.submit_popup_message = ""
 
     submit = st.button(
         "Submit",
@@ -355,50 +423,76 @@ def main() -> None:
     )
 
     if submit:
-    st.session_state.submitted = True
-    st.session_state.last_success = False
-    st.session_state.last_pdf_bytes = None
-    st.session_state.last_pdf_filename = None
+        st.session_state.submitted = True
+        st.session_state.last_success = False
+        st.session_state.last_pdf_bytes = None
+        st.session_state.last_pdf_filename = None
+        st.session_state.show_submit_popup = False
+        st.session_state.submit_popup_message = ""
 
-    st.warning("Do not refresh page. Wait for download button to appear.")
+        st.warning("Do not refresh page. Wait for download button to appear.")
 
-    if not inspector_name.strip():
-        st.error("Inspector Name is required.")
+        if not inspector_name.strip():
+            st.error("Inspector Name is required.")
+            st.session_state.submitted = False
+            st.stop()
+
+        final_needed = list(needed_results)
+
+        if truck_model_year_value not in (None, 0, "0", ""):
+            final_needed.append({"item": "TRUCK MODEL YEAR", "value": int(truck_model_year_value)})
+
+        if truck_unit_number_value not in (None, 0, "0", ""):
+            final_needed.append({"item": "TRUCK UNIT NUMBER", "value": int(truck_unit_number_value)})
+
+        clean_comment = comment.strip()
+
+        try:
+            append_submission(inspector_name, final_needed, clean_comment)
+            pdf_filename, pdf_bytes = create_receipt_pdf(inspector_name, final_needed, clean_comment)
+
+            st.session_state.last_pdf_filename = pdf_filename
+            st.session_state.last_pdf_bytes = pdf_bytes
+            st.session_state.last_success = True
+
+            latest_admin_settings = load_admin_settings()
+            popup_enabled = latest_admin_settings.get("submit_popup_enabled", False)
+            popup_message = latest_admin_settings.get("submit_popup_message", "").strip()
+
+            if popup_enabled and popup_message:
+                st.session_state.show_submit_popup = True
+                st.session_state.submit_popup_message = popup_message
+
+        except Exception as e:
+            st.error(f"Submit failed: {e}")
+            st.session_state.submitted = False
+            st.stop()
+
         st.session_state.submitted = False
-        st.stop()
 
-    final_needed = list(needed_results)
+    if (
+        st.session_state.last_success
+        and st.session_state.last_pdf_bytes
+        and st.session_state.last_pdf_filename
+    ):
+        st.download_button(
+            label="Download PDF Receipt",
+            data=st.session_state.last_pdf_bytes,
+            file_name=st.session_state.last_pdf_filename,
+            mime="application/pdf",
+            use_container_width=True,
+        )
 
-    if truck_model_year_value not in (None, 0, "0", ""):
-        final_needed.append({"item": "TRUCK MODEL YEAR", "value": int(truck_model_year_value)})
+    if st.session_state.show_submit_popup and st.session_state.submit_popup_message:
+        @st.dialog("Message")
+        def show_custom_submit_popup():
+            st.write(st.session_state.submit_popup_message)
+            if st.button("Close", use_container_width=True):
+                st.session_state.show_submit_popup = False
+                st.rerun()
 
-    if truck_unit_number_value not in (None, 0, "0", ""):
-        final_needed.append({"item": "TRUCK UNIT NUMBER", "value": int(truck_unit_number_value)})
+        show_custom_submit_popup()
 
-    clean_comment = comment.strip()
-
-    try:
-        append_submission(inspector_name, final_needed, clean_comment)
-        pdf_filename, pdf_bytes = create_receipt_pdf(inspector_name, final_needed, clean_comment)
-
-        st.session_state.last_pdf_filename = pdf_filename
-        st.session_state.last_pdf_bytes = pdf_bytes
-        st.session_state.last_success = True
-    except Exception as e:
-        st.error(f"Submit failed: {e}")
-        st.session_state.submitted = False
-        st.stop()
-
-    st.session_state.submitted = False
-
-if st.session_state.last_success and st.session_state.last_pdf_bytes and st.session_state.last_pdf_filename:
-    st.download_button(
-        label="Download PDF Receipt",
-        data=st.session_state.last_pdf_bytes,
-        file_name=st.session_state.last_pdf_filename,
-        mime="application/pdf",
-        use_container_width=True,
-    )
 
 if __name__ == "__main__":
     main()
