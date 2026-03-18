@@ -314,6 +314,30 @@ def main() -> None:
                         st.rerun()
 
             st.divider()
+            st.subheader("Remove existing items")
+            if items:
+                for idx, item in enumerate(items):
+                    col_label, col_btn = st.columns([4, 1], vertical_alignment="center")
+                    with col_label:
+                        item_text = item.label
+                        if item.value_field == "choice" and item.choices:
+                            item_text += f" ({', '.join(item.choices)})"
+                        elif item.value_field in {"text", "number"}:
+                            item_text += f" ({item.value_field})"
+                        st.write(item_text)
+
+                    with col_btn:
+                        if st.button("Remove", key=f"remove_item_{idx}", use_container_width=True):
+                            updated_items = load_items()
+                            if 0 <= idx < len(updated_items):
+                                updated_items.pop(idx)
+                                save_items(updated_items)
+                                st.success("Item removed.")
+                                st.rerun()
+            else:
+                st.caption("No items to remove.")
+
+            st.divider()
             st.subheader("Submit Popup Message")
 
             with st.form("admin_submit_popup_form"):
