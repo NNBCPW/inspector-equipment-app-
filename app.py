@@ -369,7 +369,7 @@ def main() -> None:
             download_csv_button()
 
     inspector_name = st.text_input("Inspector Name (required)", placeholder="Type inspector name")
-    st.markdown("Tap **NEED** for anything the inspector is missing. Leave it off if they do not need it.")
+    st.markdown("Tap **NEED** for any equipment you need ordered, at the end click submit. Then a download pdf button will appear. Download the pdf and email it..")
     st.divider()
 
     needed_results: List[Dict[str, Any]] = []
