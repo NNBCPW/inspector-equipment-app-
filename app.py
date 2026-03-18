@@ -361,8 +361,9 @@ def main() -> None:
         st.session_state.last_pdf_filename = None
 
         st.warning(
-            "WAIT FOR DOWNLOAD PDF BUTTON Submitting request... Please wait for confirmation. "
+            " Submitting request... Please wait for confirmation. "
             "Do NOT refresh the page or press Submit again."
+            "Scroll Down."
         )
 
         with st.spinner("Submitting request..."):
@@ -393,13 +394,13 @@ def main() -> None:
                 st.session_state.submitted = False
                 st.stop()
 
-        st.success("Submitted successfully. Click download PDF button below")
-        st.info("Download the PDF below, then attach it to an email.")
+        st.success("Submitted successfully. SCROLL DOWN")
+        st.info("Click Download PDF, then Email it")
         st.session_state.submitted = False
 
     if st.session_state.last_success and st.session_state.last_pdf_bytes and st.session_state.last_pdf_filename:
         st.download_button(
-            label="Download PDF Receipt",
+            label="CLICK TO DOWNLOAD PDF Receipt",
             data=st.session_state.last_pdf_bytes,
             file_name=st.session_state.last_pdf_filename,
             mime="application/pdf",
