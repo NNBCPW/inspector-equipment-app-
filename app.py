@@ -136,7 +136,7 @@ def append_request_history(
 
     display_parts = []
     for entry in item_entries:
-        quantity = int(entry.get("quantity", 0))
+        quantity = int(entry.get("quantity", 0) or 0)
         item_name = str(entry.get("item", "")).strip()
         value = entry.get("value", "")
         item_text = item_name
@@ -256,11 +256,6 @@ def wrap_text_lines(text: str, width: int = 90) -> List[str]:
     return lines or [""]
 
 
-def item_key_from_label(label: str) -> str:
-    base = re.sub(r"[^a-zA-Z0-9]+", "_", label.strip().lower()).strip("_")
-    return base or "item"
-
-
 def is_truck_field(label: str) -> bool:
     l = label.strip().lower()
     return l in {"truck model year", "truck unit number"}
@@ -299,7 +294,10 @@ def parse_items_json(items_json: str) -> List[Dict[str, Any]]:
 
 
 def get_available_months(rows: List[Dict[str, str]]) -> List[str]:
-    months = sorted({row.get("year_month", "").strip() for row in rows if row.get("year_month", "").strip()}, reverse=True)
+    months = sorted(
+        {row.get("year_month", "").strip() for row in rows if row.get("year_month", "").strip()},
+        reverse=True,
+    )
     return months
 
 
@@ -316,6 +314,37 @@ def compute_item_totals_from_rows(rows: List[Dict[str, str]]) -> Dict[str, int]:
 
 def compute_lifetime_item_totals(rows: List[Dict[str, str]]) -> Dict[str, int]:
     return compute_item_totals_from_rows(rows)
+
+
+# ---------- Form reset helpers ----------
+def queue_form_reset(items: List[Item]) -> None:
+    reset_payload: Dict[str, Any] = {
+        "inspector_name_input": "",
+        "comment_input": "",
+    }
+
+    for idx, item in enumerate(items):
+        reset_payload[f"qty_{idx}"] = 0
+
+        if item.value_field == "text":
+            reset_payload[f"val_{idx}"] = ""
+        elif item.value_field == "number":
+            reset_payload[f"val_{idx}"] = 0
+        elif item.value_field == "choice":
+            reset_payload[f"val_{idx}"] = item.choices[0] if item.choices else "Option 1"
+
+    st.session_state["pending_form_reset"] = reset_payload
+
+
+def apply_pending_form_reset() -> None:
+    pending = st.session_state.get("pending_form_reset")
+    if not pending:
+        return
+
+    for key, value in pending.items():
+        st.session_state[key] = value
+
+    del st.session_state["pending_form_reset"]
 
 
 # ---------- PDF helpers ----------
@@ -434,10 +463,7 @@ def create_receipt_pdf(
 
 
 # ---------- Excel export helpers ----------
-def build_monthly_workbook(
-    selected_month: str,
-    month_rows: List[Dict[str, str]],
-) -> bytes:
+def build_monthly_workbook(selected_month: str, month_rows: List[Dict[str, str]]) -> bytes:
     wb = Workbook()
     ws1 = wb.active
     ws1.title = "Monthly Request Receipts"
@@ -653,7 +679,6 @@ def render_admin_reports(items: List[Item]) -> None:
     st.subheader("Monthly reports")
 
     if all_months:
-        default_month = all_months[0]
         selected_month = st.selectbox("Choose month", options=all_months, index=0)
     else:
         default_month = datetime.now().strftime("%Y-%m")
@@ -677,7 +702,7 @@ def render_admin_reports(items: List[Item]) -> None:
     lifetime_totals = compute_lifetime_item_totals(history_rows)
 
     if items:
-        for idx, item in enumerate(items):
+        for item in items:
             monthly_qty = month_totals.get(item.label, 0)
             lifetime_qty = lifetime_totals.get(item.label, 0)
 
@@ -749,19 +774,22 @@ def init_form_session_state(items: List[Item]) -> None:
             if val_key not in st.session_state:
                 st.session_state[val_key] = default_choice
 
-
-def clear_form_state(items: List[Item]) -> None:
-    for idx, item in enumerate(items):
-        st.session_state[f"qty_{idx}"] = 0
-        if item.value_field == "text":
-            st.session_state[f"val_{idx}"] = ""
-        elif item.value_field == "number":
-            st.session_state[f"val_{idx}"] = 0
-        elif item.value_field == "choice":
-            st.session_state[f"val_{idx}"] = item.choices[0] if item.choices else "Option 1"
-
-    st.session_state["inspector_name_input"] = ""
-    st.session_state["comment_input"] = ""
+    if "submitted" not in st.session_state:
+        st.session_state.submitted = False
+    if "last_pdf_bytes" not in st.session_state:
+        st.session_state.last_pdf_bytes = None
+    if "last_pdf_filename" not in st.session_state:
+        st.session_state.last_pdf_filename = None
+    if "last_success" not in st.session_state:
+        st.session_state.last_success = False
+    if "show_submit_popup" not in st.session_state:
+        st.session_state.show_submit_popup = False
+    if "submit_popup_message" not in st.session_state:
+        st.session_state.submit_popup_message = ""
+    if "inspector_name_input" not in st.session_state:
+        st.session_state.inspector_name_input = ""
+    if "comment_input" not in st.session_state:
+        st.session_state.comment_input = ""
 
 
 def build_submission_payload(items: List[Item]) -> Tuple[List[Dict[str, Any]], Optional[int], Optional[int]]:
@@ -793,6 +821,7 @@ def build_submission_payload(items: List[Item]) -> Tuple[List[Dict[str, Any]], O
 
 
 def render_request_form(items: List[Item], admin_settings: Dict[str, Any]) -> None:
+    apply_pending_form_reset()
     st.subheader("Request form")
 
     init_form_session_state(items)
@@ -834,7 +863,7 @@ def render_request_form(items: List[Item], admin_settings: Dict[str, Any]) -> No
             st.divider()
             continue
 
-        c1, c2, c3 = st.columns([1.3, 0.8, 3.4], vertical_alignment="center")
+        c1, c2, c3 = st.columns([1.3, 0.9, 3.3], vertical_alignment="center")
 
         with c1:
             if st.button("+1 NEED", key=f"add_qty_{idx}", use_container_width=True, type="primary"):
@@ -884,19 +913,6 @@ def render_request_form(items: List[Item], admin_settings: Dict[str, Any]) -> No
         height=120,
         placeholder="Type any notes here...",
     )
-
-    if "submitted" not in st.session_state:
-        st.session_state.submitted = False
-    if "last_pdf_bytes" not in st.session_state:
-        st.session_state.last_pdf_bytes = None
-    if "last_pdf_filename" not in st.session_state:
-        st.session_state.last_pdf_filename = None
-    if "last_success" not in st.session_state:
-        st.session_state.last_success = False
-    if "show_submit_popup" not in st.session_state:
-        st.session_state.show_submit_popup = False
-    if "submit_popup_message" not in st.session_state:
-        st.session_state.submit_popup_message = ""
 
     submit = st.button(
         "Submit",
@@ -971,7 +987,7 @@ def render_request_form(items: List[Item], admin_settings: Dict[str, Any]) -> No
                 st.session_state.show_submit_popup = True
                 st.session_state.submit_popup_message = popup_message
 
-            clear_form_state(items)
+            queue_form_reset(items)
 
         except Exception as e:
             st.error(f"Submit failed: {e}")
@@ -1070,7 +1086,6 @@ def main() -> None:
 
         with tab_reports:
             render_admin_reports(items)
-
     else:
         render_request_form(items, admin_settings)
 
